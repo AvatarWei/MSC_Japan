@@ -1,0 +1,68 @@
+import streamlit as st
+import requests
+import pandas as pd
+from datetime import datetime
+
+# 網頁標題
+st.set_page_config(page_title="MSC 榮耀號航線監控", layout="wide")
+st.title("🚢 MSC 榮耀號：1/13 航線天氣儀表板")
+
+# --- 全域變數定義區 (修正 NameError) ---
+locations = [
+    {"name": "那霸 (Naha)", "lat": 26.21, "lon": 127.68},
+    {"name": "宮古島 (Miyako)", "lat": 24.80, "lon": 125.28},
+    {"name": "石垣島 (Ishigaki)", "lat": 24.34, "lon": 124.15}
+]
+
+# 定義星期名稱，讓全程式都能讀到
+WEEKDAYS_LIST = ["(一)", "(二)", "(三)", "(四)", "(五)", "(六)", "(日)"]
+DEPARTURE_DATE = datetime(2026, 1, 13)
+TODAY = datetime.now()
+days_left = (DEPARTURE_DATE.date() - TODAY.date()).days
+
+def get_weather_data():
+    weather_results = {}
+    daily_time = [] 
+    
+    for loc in locations:
+        # 同時抓取最高與最低溫
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={loc['lat']}&longitude={loc['lon']}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo"
+        res = requests.get(url).json()
+        daily = res["daily"]
+        daily_time = daily["time"]
+        
+        day_data = []
+        for i in range(7):
+            max_t = int(daily['temperature_2m_max'][i])
+            min_t = int(daily['temperature_2m_min'][i])
+            temp_range = f"{min_t}°~{max_t}°C"
+            code = daily["weathercode"][i]
+            icon = "☀️" if code <= 2 else "☁️" if code <= 3 else "🌧️"
+            day_data.append(f"{temp_range} {icon}")
+        
+        weather_results[loc['name']] = day_data
+    
+    dates_with_week = []
+    for d in daily_time:
+        date_obj = datetime.strptime(d, "%Y-%m-%d")
+        week_str = WEEKDAYS_LIST[date_obj.weekday()]
+        dates_with_week.append(f"{d[5:].replace('-', '/')}{week_str}")
+    
+    return pd.DataFrame(weather_results, index=dates_with_week).T
+
+# 定義顏色邏輯：下雨標紅
+def color_rainy(val):
+    color = 'red' if '🌧️' in str(val) else 'black'
+    return f'color: {color}'
+
+# 執行並顯示表格 (修正 Streamlit 更新警告)
+df = get_weather_data()
+st.table(df.style.map(color_rainy)) # 這裡已將 applymap 改為 map
+
+# --- 動態顯示資訊 ---
+if days_left > 0:
+    st.info(f"📅 今日日期：{TODAY.strftime('%Y/%m/%d')} {WEEKDAYS_LIST[TODAY.weekday()]} | 距離 1/13 (二) 出發還有 **{days_left}** 天")
+elif days_left == 0:
+    st.success("🎉 祝啟航愉快！今天就是 1/13 出發日！")
+else:
+    st.write("🚢 郵輪旅行進行中。")
